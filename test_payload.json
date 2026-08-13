@@ -1,0 +1,25 @@
+{
+  "session": {
+    "activityType": "RUNNING",
+    "totalDistanceMeters": 5200.5,
+    "durationSeconds": 1800,
+    "trimpAccumulated": 120.5,
+    "initialTsbState": -12.5,
+    "qualitativeStress": "High",
+    "qualitativeMenstrualPhase": "Luteal"
+  },
+  "logs": [
+    {
+      "timestamp": 1690000000,
+      "cadenceSpm": 165,
+      "impactForceG": 1.4,
+      "heartRateBpm": 150
+    },
+    {
+      "timestamp": 1690000010,
+      "cadenceSpm": 162,
+      "impactForceG": 1.6,
+      "heartRateBpm": 155
+    }
+  ]
+}
