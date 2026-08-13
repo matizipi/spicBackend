@@ -1,4 +1,6 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 google-genai
+httptools
+uvloop
