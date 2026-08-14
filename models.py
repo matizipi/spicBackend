@@ -39,11 +39,11 @@ class GeminiWorkoutAnalysisResponse(BaseModel):
 class SyncWorkoutSession(BaseModel):
     localId: int
     startTimestamp: int
-    endTimestamp: Optional[int]
+    endTimestamp: Optional[int] = None
     activityType: str
     totalDistanceMeters: float
     trimpAccumulated: float
-    aiBiomechanicsFeedback: Optional[str]
+    aiBiomechanicsFeedback: Optional[str] = None
 
 class SyncPayload(BaseModel):
     sessions: List[SyncWorkoutSession]
