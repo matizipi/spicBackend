@@ -4,3 +4,5 @@ pydantic
 google-genai
 httptools
 uvloop
+motor
+firebase-admin

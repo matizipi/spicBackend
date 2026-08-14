@@ -35,3 +35,15 @@ class GeminiWorkoutAnalysisResponse(BaseModel):
     fatigue_status: str = Field(description="Diagnóstico del estado de fatiga basado en TSB y TRIMP.")
     recommended_recovery_hours: int = Field(description="Horas de recuperación recomendadas.")
     next_workout_plan: NextWorkoutPlan
+
+class SyncWorkoutSession(BaseModel):
+    localId: int
+    startTimestamp: int
+    endTimestamp: Optional[int]
+    activityType: str
+    totalDistanceMeters: float
+    trimpAccumulated: float
+    aiBiomechanicsFeedback: Optional[str]
+
+class SyncPayload(BaseModel):
+    sessions: List[SyncWorkoutSession]
