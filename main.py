@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, status, Depends
 from models import WorkoutTelemetryPayload, GeminiWorkoutAnalysisResponse, SyncPayload, UserProfile
+import models
 from services.ai_coach import generate_workout_analysis
 import os
 from database import get_database, close_database_connection
@@ -41,6 +42,22 @@ def analyze_workout(payload: WorkoutTelemetryPayload):
         raise HTTPException(status_code=500, detail=str(ve))
     except Exception as e:
         # e.g., Gemini API call failed or parsing failed
+        raise HTTPException(status_code=502, detail=f"AI Processing Error: {str(e)}")
+
+@app.post(
+    "/api/v1/coach/suggestion",
+    response_model=models.GlobalCoachSuggestion,
+    status_code=status.HTTP_200_OK,
+    summary="Get global coach suggestion based on history"
+)
+def get_coach_suggestion(payload: models.WorkoutHistoryPayload, uid: str = Depends(verify_token)):
+    from services.ai_coach import generate_global_coach_suggestion
+    try:
+        suggestion = generate_global_coach_suggestion(payload)
+        return suggestion
+    except ValueError as ve:
+        raise HTTPException(status_code=500, detail=str(ve))
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI Processing Error: {str(e)}")
 
 @app.post("/api/v1/sync", status_code=status.HTTP_200_OK)

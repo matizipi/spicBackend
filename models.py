@@ -48,6 +48,16 @@ class SyncWorkoutSession(BaseModel):
 class SyncPayload(BaseModel):
     sessions: List[SyncWorkoutSession]
 
+class WorkoutHistoryPayload(BaseModel):
+    sessions: List[SyncWorkoutSession]
+
+class GlobalCoachSuggestion(BaseModel):
+    type: str = Field(description="Categoría principal (ej: Descanso, Repetir, Nuevo Desafío)")
+    title: str = Field(description="Título corto de la sugerencia (ej: Día de Recuperación Activa)")
+    description: str = Field(description="Descripción detallada de la sugerencia y el motivo, basada en la fatiga y el historial reciente.")
+    targetActivity: Optional[str] = Field(description="Si sugiere actividad, cuál (ej: Ciclismo suave).", default=None)
+    targetDurationMinutes: Optional[int] = Field(description="Duración sugerida en minutos.", default=None)
+
 # --- User Profile Models ---
 class UserProfile(BaseModel):
     firstName: Optional[str] = None

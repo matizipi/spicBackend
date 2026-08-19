@@ -68,3 +68,45 @@ def generate_workout_analysis(payload: WorkoutTelemetryPayload) -> GeminiWorkout
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         raise e
+
+def generate_global_coach_suggestion(payload: 'WorkoutHistoryPayload') -> 'GlobalCoachSuggestion':
+    if client is None:
+        raise ValueError("Gemini client is not initialized. Check your GEMINI_API_KEY.")
+        
+    from models import GlobalCoachSuggestion
+
+    # Build a text summary of the sessions
+    history_text = "--- Historial Reciente (Orden cronológico) ---\n"
+    for i, s in enumerate(payload.sessions):
+        history_text += f"Sesión {i+1}: {s.activityType}, {s.totalDistanceMeters}m, TRIMP: {s.trimpAccumulated}\n"
+        if s.aiBiomechanicsFeedback:
+            history_text += f"   Feedback previo: {s.aiBiomechanicsFeedback}\n"
+
+    system_instruction = """
+    Eres el 'Cerebro Cognitivo' y Entrenador de Élite de FitAI.
+    Tu objetivo es analizar el historial reciente de entrenamientos del atleta y decidir cuál debería ser su siguiente paso HOY.
+    
+    Analiza la acumulación de TRIMP (carga de entrenamiento) y los tipos de actividad.
+    Si el atleta ha entrenado muchos días seguidos o tiene TRIMP muy alto, sugiere 'Descanso' o 'Recuperación'.
+    Si el atleta lleva un ritmo estable, sugiere un 'Nuevo Desafío' o 'Progresión'.
+    Si el historial muestra pocas sesiones recientes o de muy baja intensidad, sugiere 'Aumentar volumen'.
+    
+    Devuelve la salida ESTRICTAMENTE según el JSON Schema de GlobalCoachSuggestion.
+    Sé motivador, conciso y profesional.
+    """
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=history_text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=GlobalCoachSuggestion,
+                temperature=0.3,
+            )
+        )
+        return GlobalCoachSuggestion.parse_raw(response.text)
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        raise e
