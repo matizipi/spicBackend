@@ -60,6 +60,26 @@ def get_coach_suggestion(payload: models.WorkoutHistoryPayload, uid: str = Depen
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI Processing Error: {str(e)}")
 
+@app.get("/api/v1/sync", response_model=models.SyncPayload, status_code=status.HTTP_200_OK)
+async def get_synced_workouts(uid: str = Depends(verify_token)):
+    db = get_database()
+    collection = db["workouts"]
+    cursor = collection.find({"userId": uid})
+    
+    sessions = []
+    for doc in await cursor.to_list(length=1000):
+        # We need to map MongoDB _id out, but SyncWorkoutSession doesn't use it.
+        # Just pass the dict, pydantic will ignore extra fields by default, but let's be safe.
+        doc.pop("_id", None)
+        doc.pop("userId", None)
+        try:
+            session = models.SyncWorkoutSession(**doc)
+            sessions.append(session)
+        except Exception as e:
+            print(f"Error mapping document {doc}: {e}")
+            
+    return models.SyncPayload(sessions=sessions)
+
 @app.post("/api/v1/sync", status_code=status.HTTP_200_OK)
 async def sync_workouts(payload: SyncPayload, uid: str = Depends(verify_token)):
     db = get_database()
