@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, status, Depends
-from models import WorkoutTelemetryPayload, GeminiWorkoutAnalysisResponse, SyncPayload
+from models import WorkoutTelemetryPayload, GeminiWorkoutAnalysisResponse, SyncPayload, UserProfile
 from services.ai_coach import generate_workout_analysis
 import os
 from database import get_database, close_database_connection
@@ -61,5 +61,35 @@ async def sync_workouts(payload: SyncPayload, uid: str = Depends(verify_token)):
         saved_count += 1
         
     return {"status": "ok", "synced_count": saved_count}
+
+@app.get("/api/v1/profile", response_model=UserProfile, status_code=status.HTTP_200_OK)
+async def get_profile(uid: str = Depends(verify_token)):
+    db = get_database()
+    users = db["users"]
+    user_doc = await users.find_one({"userId": uid})
+    if user_doc:
+        return UserProfile(**user_doc)
+    return UserProfile()
+
+@app.post("/api/v1/profile", status_code=status.HTTP_200_OK)
+async def update_profile(profile: UserProfile, uid: str = Depends(verify_token)):
+    db = get_database()
+    users = db["users"]
+
+    # Validate username uniqueness
+    if profile.username:
+        existing_user = await users.find_one({"username": profile.username})
+        if existing_user and existing_user.get("userId") != uid:
+            raise HTTPException(status_code=400, detail="Este username ya está en uso")
+
+    doc = profile.dict(exclude_none=True)
+    doc["userId"] = uid
+
+    await users.update_one(
+        {"userId": uid},
+        {"$set": doc},
+        upsert=True
+    )
+    return {"status": "ok", "message": "Perfil actualizado"}
 
 # To run locally: uvicorn main:app --reload

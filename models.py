@@ -47,3 +47,10 @@ class SyncWorkoutSession(BaseModel):
 
 class SyncPayload(BaseModel):
     sessions: List[SyncWorkoutSession]
+
+# --- User Profile Models ---
+class UserProfile(BaseModel):
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    username: Optional[str] = None
+    email: Optional[str] = None
