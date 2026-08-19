@@ -1,6 +1,8 @@
 import os
 import requests
 import json
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from models import WorkoutTelemetryPayload, GeminiWorkoutAnalysisResponse, GlobalCoachSuggestion
 
@@ -8,15 +10,39 @@ load_dotenv()
 
 # Configuración de Groq
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant") # Modelo gratuito y veloz para JSON
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
-def _call_groq(prompt: str, system: str, schema_class) -> dict:
+# Configuración de Gemini
+try:
+    gemini_client = genai.Client()
+except Exception as e:
+    print(f"Warning: Gemini client initialization failed. Ensure GEMINI_API_KEY is set. Error: {e}")
+    gemini_client = None
+
+def _call_gemini(prompt: str, system: str, schema_class):
+    if gemini_client is None:
+        raise ValueError("Gemini client is not initialized. Check your GEMINI_API_KEY.")
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                response_mime_type="application/json",
+                response_schema=schema_class,
+                temperature=0.2,
+            )
+        )
+        return schema_class.parse_raw(response.text)
+    except Exception as e:
+        print(f"Error llamando a Gemini API: {e}")
+        raise e
+
+def _call_groq(prompt: str, system: str, schema_class):
     if not GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY no está configurada. Debes configurar la variable de entorno.")
 
     url = "https://api.groq.com/openai/v1/chat/completions"
-    
-    # Armamos la petición forzando la salida en JSON y añadiendo el esquema esperado en el prompt
     schema_json = schema_class.schema_json()
     full_prompt = f"{prompt}\n\nIMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido que respete exactamente este esquema: {schema_json}"
     
@@ -28,14 +54,8 @@ def _call_groq(prompt: str, system: str, schema_class) -> dict:
     payload = {
         "model": GROQ_MODEL,
         "messages": [
-            {
-                "role": "system",
-                "content": system
-            },
-            {
-                "role": "user",
-                "content": full_prompt
-            }
+            {"role": "system", "content": system},
+            {"role": "user", "content": full_prompt}
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.2
@@ -45,23 +65,14 @@ def _call_groq(prompt: str, system: str, schema_class) -> dict:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         result_json = response.json()
-        
-        # Extraemos el contenido devuelto por Groq
         response_text = result_json["choices"][0]["message"]["content"]
-        
-        # Validamos usando Pydantic
         return schema_class.parse_raw(response_text)
-    except requests.exceptions.RequestException as e:
-        print(f"Error llamando a Groq API: {e}")
-        if response is not None:
-            print(f"Respuesta de error: {response.text}")
-        raise e
     except Exception as e:
-        print(f"Error parseando respuesta de Groq: {e}")
+        print(f"Error llamando a Groq API: {e}")
         raise e
 
 def generate_workout_analysis(payload: WorkoutTelemetryPayload) -> GeminiWorkoutAnalysisResponse:
-    # Calculamos resúmenes
+    # TAREA 1: Análisis Post-Entrenamiento denso -> GEMINI
     avg_cadence = sum(l.cadenceSpm for l in payload.logs if l.cadenceSpm) / max(1, len([l for l in payload.logs if l.cadenceSpm]))
     avg_impact = sum(l.impactForceG for l in payload.logs if l.impactForceG) / max(1, len([l for l in payload.logs if l.impactForceG]))
     avg_hr = sum(l.heartRateBpm for l in payload.logs if l.heartRateBpm) / max(1, len([l for l in payload.logs if l.heartRateBpm]))
@@ -96,9 +107,10 @@ def generate_workout_analysis(payload: WorkoutTelemetryPayload) -> GeminiWorkout
     Mantén las evaluaciones concisas, directas y motivadoras.
     """
 
-    return _call_groq(data_summary, system_instruction, GeminiWorkoutAnalysisResponse)
+    return _call_gemini(data_summary, system_instruction, GeminiWorkoutAnalysisResponse)
 
 def generate_global_coach_suggestion(payload: 'WorkoutHistoryPayload') -> 'GlobalCoachSuggestion':
+    # TAREA 2: Análisis Rápido del Historial para Dashboard -> GROQ (Llama 3.1)
     history_text = "--- Historial Reciente (Orden cronológico) ---\n"
     for i, s in enumerate(payload.sessions):
         history_text += f"Sesión {i+1}: {s.activityType}, {s.totalDistanceMeters}m, TRIMP: {s.trimpAccumulated}\n"
