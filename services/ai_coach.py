@@ -10,7 +10,7 @@ load_dotenv()
 
 # Configuración de Groq
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/compound")
 
 # Configuración de Gemini
 try:
