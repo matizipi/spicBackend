@@ -1,12 +1,16 @@
 import os
 import requests
 import json
+import re
+import logging
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from models import WorkoutTelemetryPayload, GeminiWorkoutAnalysisResponse, GlobalCoachSuggestion
 
 load_dotenv()
+
+logger = logging.getLogger("FitAIAudit")
 
 # Configuración de Groq
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -16,27 +20,50 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 try:
     gemini_client = genai.Client()
 except Exception as e:
-    print(f"Warning: Gemini client initialization failed. Ensure GEMINI_API_KEY is set. Error: {e}")
+    logger.error(f"Warning: Gemini client initialization failed. Ensure GEMINI_API_KEY is set. Error: {e}")
     gemini_client = None
+
+def sanitize_prompt_input(text: str) -> str:
+    if not text:
+        return text
+    # Remove markdown formatting, quotes, html tags, and instruction keywords
+    text = re.sub(r'[<>"\'`\*_]', ' ', text)
+    text = re.sub(r'(?i)\b(ignore|system|instruction|prompt|bypass|override)\b', '[REDACTED]', text)
+    return text.strip()
 
 def _call_gemini(prompt: str, system: str, schema_class):
     if gemini_client is None:
         raise ValueError("Gemini client is not initialized. Check your GEMINI_API_KEY.")
-    try:
-        response = gemini_client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=schema_class,
-                temperature=0.2,
+        
+    for attempt in range(3):
+        try:
+            response = gemini_client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    response_mime_type="application/json",
+                    response_schema=schema_class,
+                    temperature=0.2,
+                )
             )
-        )
-        return schema_class.parse_raw(response.text)
-    except Exception as e:
-        print(f"Error llamando a Gemini API: {e}")
-        raise e
+            return schema_class.parse_raw(response.text)
+        except Exception as e:
+            logger.error(f"Error llamando a Gemini API (Intento {attempt+1}): {e}")
+            if attempt == 2:
+                # Anti-Loop Fallback
+                from models import NextWorkoutPlan
+                return schema_class(
+                    technical_evaluation="No se pudo procesar la telemetría biomecánica por inconsistencias.",
+                    fatigue_status="Estado de fatiga indeterminado.",
+                    recommended_recovery_hours=24,
+                    next_workout_plan=NextWorkoutPlan(
+                        type="Recuperación Activa - Zona 1",
+                        durationMinutes=30,
+                        targetHeartRateZone="Z1",
+                        reasoning="Safety Fallback (Anti-Loop triggered)."
+                    )
+                )
 
 def _call_groq(prompt: str, system: str, schema_class):
     if not GROQ_API_KEY:
@@ -61,15 +88,24 @@ def _call_groq(prompt: str, system: str, schema_class):
         "temperature": 0.2
     }
     
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        result_json = response.json()
-        response_text = result_json["choices"][0]["message"]["content"]
-        return schema_class.parse_raw(response_text)
-    except Exception as e:
-        print(f"Error llamando a Groq API: {e}")
-        raise e
+    for attempt in range(3):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            result_json = response.json()
+            response_text = result_json["choices"][0]["message"]["content"]
+            return schema_class.parse_raw(response_text)
+        except Exception as e:
+            logger.error(f"Error llamando a Groq API (Intento {attempt+1}): {e}")
+            if attempt == 2:
+                # Anti-Loop Fallback
+                return schema_class(
+                    type="Descanso",
+                    title="Recuperación Activa Recomendada",
+                    description="Safety Fallback activado (Anti-Loop). Te sugerimos tomar un descanso hoy.",
+                    targetActivity="Descanso",
+                    targetDurationMinutes=0
+                )
 
 def generate_workout_analysis(payload: WorkoutTelemetryPayload) -> GeminiWorkoutAnalysisResponse:
     # TAREA 1: Análisis Post-Entrenamiento denso -> GEMINI
@@ -77,22 +113,27 @@ def generate_workout_analysis(payload: WorkoutTelemetryPayload) -> GeminiWorkout
     avg_impact = sum(l.impactForceG for l in payload.logs if l.impactForceG) / max(1, len([l for l in payload.logs if l.impactForceG]))
     avg_hr = sum(l.heartRateBpm for l in payload.logs if l.heartRateBpm) / max(1, len([l for l in payload.logs if l.heartRateBpm]))
 
+    safe_activity = sanitize_prompt_input(payload.session.activityType)
+    safe_stress = sanitize_prompt_input(payload.session.qualitativeStress) or 'No reportado'
+    safe_phase = sanitize_prompt_input(payload.session.qualitativeMenstrualPhase) or 'No aplicable/No reportado'
+
     data_summary = f"""
     --- Datos del Entrenamiento ---
-    Actividad: {payload.session.activityType}
+    Actividad: {safe_activity}
     Distancia: {payload.session.totalDistanceMeters} metros
     Duración: {payload.session.durationSeconds} segundos
     TRIMP Acumulado de la sesión: {payload.session.trimpAccumulated}
     Estado de Forma (TSB) Inicial: {payload.session.initialTsbState}
-    Estrés Percibido: {payload.session.qualitativeStress or 'No reportado'}
-    Fase Menstrual: {payload.session.qualitativeMenstrualPhase or 'No aplicable/No reportado'}
+    Estrés Percibido: {safe_stress}
+    Fase Menstrual: {safe_phase}
     
     --- Resumen Biomecánico y Fisiológico ---
     Cadencia Promedio: {avg_cadence:.1f} SPM
     Fuerza de Impacto Promedio: {avg_impact:.2f} G
     Frecuencia Cardíaca Promedio: {avg_hr:.1f} BPM
     """
-
+    logger.info(f"Generating workout analysis for TSB {payload.session.initialTsbState}")
+    
     system_instruction = """
     Eres el 'Cerebro Cognitivo' de una plataforma de entrenamiento biomecánico y fisiológico avanzado.
     Tu objetivo es actuar como un Fisiólogo Jefe y Entrenador de Élite.
@@ -113,9 +154,12 @@ def generate_global_coach_suggestion(payload: 'WorkoutHistoryPayload') -> 'Globa
     # TAREA 2: Análisis Rápido del Historial para Dashboard -> GROQ (Llama 3.1)
     history_text = "--- Historial Reciente (Orden cronológico) ---\n"
     for i, s in enumerate(payload.sessions):
-        history_text += f"Sesión {i+1}: {s.activityType}, {s.totalDistanceMeters}m, TRIMP: {s.trimpAccumulated}\n"
+        safe_activity = sanitize_prompt_input(s.activityType)
+        history_text += f"Sesión {i+1}: {safe_activity}, {s.totalDistanceMeters}m, TRIMP: {s.trimpAccumulated}\n"
         if s.aiBiomechanicsFeedback:
-            history_text += f"   Feedback previo: {s.aiBiomechanicsFeedback}\n"
+            safe_feedback = sanitize_prompt_input(s.aiBiomechanicsFeedback)
+            history_text += f"   Feedback previo: {safe_feedback}\n"
+    logger.info(f"Generating global coach suggestion for {len(payload.sessions)} sessions")
 
     system_instruction = """
     Eres el 'Cerebro Cognitivo' y Entrenador de Élite de FitAI.

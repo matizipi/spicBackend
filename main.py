@@ -5,6 +5,28 @@ from services.ai_coach import generate_workout_analysis
 import os
 from database import get_database, close_database_connection
 from auth import init_firebase, verify_token
+import logging
+import json
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "module": record.module,
+            "funcName": record.funcName
+        }
+        if record.exc_info:
+            log_record["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(log_record)
+
+logger = logging.getLogger("FitAIAudit")
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setFormatter(JsonFormatter())
+if not logger.handlers:
+    logger.addHandler(ch)
 
 app = FastAPI(
     title="FitAI Biomechanics - Cognitive Brain API",
@@ -34,6 +56,7 @@ def health_check():
 )
 def analyze_workout(payload: WorkoutTelemetryPayload):
     try:
+        logger.info("Received analyze-workout request")
         # Pass the validated payload to the AI service
         analysis = generate_workout_analysis(payload)
         return analysis
@@ -53,6 +76,7 @@ def analyze_workout(payload: WorkoutTelemetryPayload):
 def get_coach_suggestion(payload: models.WorkoutHistoryPayload, uid: str = Depends(verify_token)):
     from services.ai_coach import generate_global_coach_suggestion
     try:
+        logger.info(f"Received coach suggestion request for uid {uid}")
         suggestion = generate_global_coach_suggestion(payload)
         return suggestion
     except ValueError as ve:
@@ -76,7 +100,7 @@ async def get_synced_workouts(uid: str = Depends(verify_token)):
             session = models.SyncWorkoutSession(**doc)
             sessions.append(session)
         except Exception as e:
-            print(f"Error mapping document {doc}: {e}")
+            logger.error(f"Error mapping document {doc}: {e}")
             
     return models.SyncPayload(sessions=sessions)
 
