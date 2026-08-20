@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+
+# Archivos de entorno y configuraciones secretas
+.env
+.env.*
+
+# Credenciales de Google/Firebase (NUNCA SUBIR)
+firebase-adminsdk*.json
+*credentials*.json
+*serviceAccount*.json
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
