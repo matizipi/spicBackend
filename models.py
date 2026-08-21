@@ -12,7 +12,7 @@ class SensorDataPoint(BaseModel):
 class WorkoutSessionData(BaseModel):
     activityType: str
     totalDistanceMeters: float = Field(..., ge=0.0)
-    durationSeconds: int = Field(..., gt=0)
+    durationSeconds: int = Field(..., ge=0)
     trimpAccumulated: float = Field(..., ge=0.0)
     initialTsbState: float
     qualitativeStress: Optional[str] = None
