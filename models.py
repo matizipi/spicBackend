@@ -5,22 +5,22 @@ from typing import List, Optional
 
 class SensorDataPoint(BaseModel):
     timestamp: int
-    cadenceSpm: Optional[int] = None
-    impactForceG: Optional[float] = None
-    heartRateBpm: Optional[int] = None
+    cadenceSpm: Optional[int] = Field(None, ge=0, le=300)
+    impactForceG: Optional[float] = Field(None, ge=0.0, le=50.0)
+    heartRateBpm: Optional[int] = Field(None, ge=30, le=250)
 
 class WorkoutSessionData(BaseModel):
     activityType: str
-    totalDistanceMeters: float
-    durationSeconds: int
-    trimpAccumulated: float
+    totalDistanceMeters: float = Field(..., ge=0.0)
+    durationSeconds: int = Field(..., gt=0)
+    trimpAccumulated: float = Field(..., ge=0.0)
     initialTsbState: float
     qualitativeStress: Optional[str] = None
     qualitativeMenstrualPhase: Optional[str] = None
 
 class WorkoutTelemetryPayload(BaseModel):
     session: WorkoutSessionData
-    logs: List[SensorDataPoint]
+    logs: List[SensorDataPoint] = Field(..., max_length=15000, description="Evita ataques DoS por payloads masivos")
 
 # --- Output Models (Structured Output for Gemini) ---
 
